@@ -1,4 +1,4 @@
-package com.driima.binance.binance;
+package com.driima.binance.wrapper;
 
 import com.binance.api.client.domain.account.AssetBalance;
 import lombok.Data;

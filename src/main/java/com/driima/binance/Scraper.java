@@ -1,6 +1,6 @@
 package com.driima.binance;
 
-import com.driima.binance.binance.BinanceContext;
+import com.driima.binance.wrapper.BinanceWrapper;
 import com.driima.binance.util.RateLimiter;
 import com.google.common.collect.Sets;
 import org.javacord.api.AccountType;
@@ -28,7 +28,8 @@ public class Scraper {
         Scraper.time = time;
     }
 
-    public Scraper(BinanceContext context, String token) {
+    public Scraper(BinanceWrapper context, String token) {
+        // Ensure that any single coin is only pumped once, with a 30 minute cooldown
         RateLimiter rateLimiter = new RateLimiter(30, TimeUnit.MINUTES);
 
         new DiscordApiBuilder().setAccountType(AccountType.CLIENT).setToken(token).login().thenAccept(api -> {
@@ -56,11 +57,14 @@ public class Scraper {
 
                     System.out.println(messageCreateEvent.getMessage().getContent());
 
-                    Arrays.stream(content.replace("\n", " ").replace("\r", " ").replaceAll("[^a-zA-Z$# ]", " ").split(" "))
-                            .sorted((o1, o2) -> o1.equals(o2) ? 0 : (o1.contains("$") || o1.contains("#") ? -1 : 1))
-                            .map(word -> word.replaceAll("[^a-zA-Z ]", ""))
-                            .filter(context::hasBalance)
-                            .filter(word -> !ignore.contains(word))
+                    Arrays.stream(content
+                            .replace("\n", " ")
+                            .replace("\r", " ") // Remove any newlines
+                            .replaceAll("[^a-zA-Z0-9$# ]", " ").split(" ")) // Remove any invalid characters
+                            .sorted((o1, o2) -> o1.equals(o2) ? 0 : (o1.contains("$") || o1.contains("#") ? -1 : 1)) // Prioritise words that start with # or $ (incidates a possible coin)
+                            .map(word -> word.replaceAll("[^a-zA-Z0-9 ]", "")) // Remove $ and #
+                            .filter(context::hasBalance) // Ensure the asset exists
+                            .filter(word -> !ignore.contains(word)) // Ignore certain words that might often be associated to other coins
                             .findFirst()
                             .ifPresent(coin -> {
                                 if (rateLimiter.execute(coin)) {
@@ -73,14 +77,6 @@ public class Scraper {
                                         e.printStackTrace();
                                     }
                                 }
-
-//                                if (content.contains("PUMP")) {
-//                                    if (rateLimiter.execute()) {
-//                                        context.pump(coin, "BTC");
-//                                    }
-//                                } else if (content.startsWith("CHECK")) {
-//                                    context.check(coin, "BTC");
-//                                }
                             });
                 }
             });

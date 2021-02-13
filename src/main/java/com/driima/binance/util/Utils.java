@@ -17,4 +17,12 @@ public class Utils {
     public static String reduceDecimals(double amount, int notional) {
         return String.format("%." + notional + "f", amount);
     }
+
+    public static String percentage(double value) {
+        return String.format("%.2f", value*100) + "%";
+    }
+
+    public static Double getDifference(double oldValue, double newValue) {
+        return  (newValue - oldValue) / oldValue;
+    }
 }

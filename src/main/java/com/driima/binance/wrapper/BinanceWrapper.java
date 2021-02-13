@@ -1,4 +1,4 @@
-package com.driima.binance.binance;
+package com.driima.binance.wrapper;
 
 import com.binance.api.client.BinanceApiAsyncRestClient;
 import com.binance.api.client.BinanceApiRestClient;
@@ -20,104 +20,107 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-public class BinanceContext {
+public class BinanceWrapper {
 
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
+    private static final Set<String> validPumpQuotes = Sets.newHashSet("USDT", "BTC");
+
     private final BinanceApiRestClient client;
-    private final Map<String, Balance> balances;
+    private final BinanceApiAsyncRestClient asyncClient;
+    private final Map<String, Balance> balances = Maps.newHashMap();
+    private final Map<String, Trade> trades = Maps.newHashMap();
     private final Map<String, Symbol> symbols;
-    private final Map<String, Trade> trades;
+
     private final Map<String, CircularFifoQueue<Double>> averageChanges = Maps.newHashMap();
     private final Map<String, PumpTracker> currentPumps = Maps.newHashMap();
 
-    private static ScheduledFuture<?> priceChecker;
-
-    private final Set<String> validPumpQuotes = Sets.newHashSet("USDT", "BTC");
-
-    public BinanceContext(BinanceApiRestClient client, BinanceApiAsyncRestClient asyncClient) {
+    public BinanceWrapper(BinanceApiRestClient client, BinanceApiAsyncRestClient asyncClient) {
         this.client = client;
+        this.asyncClient = asyncClient;
 
-        this.balances = client.getAccount().getBalances().stream().collect(Collectors.toMap(AssetBalance::getAsset, Balance::new));
         this.symbols = client.getExchangeInfo().getSymbols().stream().map(Symbol::new).collect(Collectors.toMap(s -> s.getSymbolInfo().getSymbol(), s -> s));
-        this.trades = client.getAllPrices().stream().collect(Collectors.toMap(TickerPrice::getSymbol, Trade::new));
 
-        scheduler.scheduleAtFixedRate(() -> {
-            client.getAccount().getBalances()
-                    .forEach(assetBalance -> {
-                        if (this.balances.containsKey(assetBalance.getAsset())) {
-                            Balance balance = this.balances.get(assetBalance.getAsset());
-                            double free = Double.parseDouble(assetBalance.getFree());
-                            double locked = Double.parseDouble(assetBalance.getLocked());
+        // Retrieve balances:
+        scheduler.schedule(() -> asyncClient.getAccount(account -> account.getBalances()
+                .forEach(assetBalance -> {
+                    if (this.balances.containsKey(assetBalance.getAsset())) {
+                        Balance balance = this.balances.get(assetBalance.getAsset());
+                        double free = Double.parseDouble(assetBalance.getFree());
+                        double locked = Double.parseDouble(assetBalance.getLocked());
 
-                            balance.setFree(free);
-                            balance.setLocked(locked);
+                        balance.setFree(free);
+                        balance.setLocked(locked);
+                    } else {
+                        this.balances.put(assetBalance.getAsset(), new Balance(assetBalance));
+                    }
+                })),2, TimeUnit.SECONDS);
+
+        // Monitor price changes:
+        scheduler.scheduleAtFixedRate(() -> asyncClient.getAllPrices(allPrices -> {
+            for (TickerPrice tickerPrice : allPrices) {
+                if (this.trades.containsKey(tickerPrice.getSymbol())) {
+                    // Update the existing price
+                    Trade trade = this.trades.get(tickerPrice.getSymbol());
+                    Double oldPrice = trade.getPrice();
+                    trade.update(tickerPrice);
+
+                    // Ignore any asset without a USDT/BTC pairing
+                    if (validPumpQuotes.stream().noneMatch(s -> trade.getSymbol().endsWith(s))) {
+                        continue;
+                    }
+
+                    Double newPrice = trade.getPrice();
+
+                    double change = Utils.getDifference(oldPrice, newPrice);
+
+                    // Ignore the change if there is no change, unless it's currently being tracked
+                    if (oldPrice.equals(newPrice) && !currentPumps.containsKey(tickerPrice.getSymbol())) {
+                        continue;
+                    }
+
+                    // Normalize any downward price trends to 0
+                    if (change < 0 && !currentPumps.containsKey(tickerPrice.getSymbol())) {
+                        change = 0;
+                    }
+
+                    // Get or create a rolling average queue for this symbol
+                    CircularFifoQueue<Double> queue = averageChanges.computeIfAbsent(tickerPrice.getSymbol(), s -> new CircularFifoQueue<>(60));
+
+                    // If the queue is filled
+                    if (queue.isAtFullCapacity()) {
+                        if (currentPumps.containsKey(tickerPrice.getSymbol())) {
+                            PumpTracker pumpTracker = currentPumps.get(tickerPrice.getSymbol());
+                            double changeSinceEntry = Utils.getDifference(pumpTracker.getEntry(), newPrice);
+                            System.out.println("    " + tickerPrice.getSymbol() + ": " + Utils.percentage(changeSinceEntry));
+
+                            if (changeSinceEntry > pumpTracker.getProfit()) {
+                                System.out.println("    " + tickerPrice.getSymbol() + ": Bumping profit margin...");
+                                pumpTracker.setProfit(changeSinceEntry);
+                                pumpTracker.setTop(newPrice);
+                            } else {
+                                // TODO: Change this logic
+                                if (change < -(pumpTracker.getProfit() / 2)) {
+                                    System.out.println("    " + tickerPrice.getSymbol() + ": Leaving pump with " + Utils.percentage(changeSinceEntry) + "% profit");
+                                    currentPumps.remove(tickerPrice.getSymbol());
+                                }
+                            }
                         } else {
-                            this.balances.put(assetBalance.getAsset(), new Balance(assetBalance));
-                        }
-                    });
-        }, 2, 2, TimeUnit.MINUTES);
-
-//        long wait = Instant.now().toEpochMilli();
-//        wait = 60000 - (wait - (60000 * (wait / 60000)));
-
-//        scheduler.schedule(() -> {
-//        }, wait+666, TimeUnit.MILLISECONDS);
-        scheduler.scheduleAtFixedRate(() -> {
-            asyncClient.getAllPrices(allPrices -> {
-                for (TickerPrice tickerPrice : allPrices) {
-                    if (this.trades.containsKey(tickerPrice.getSymbol())) {
-                        Trade trade = this.trades.get(tickerPrice.getSymbol());
-                        Double oldPrice = trade.getPrice();
-                        trade.update(tickerPrice);
-
-                        if (this.validPumpQuotes.stream().noneMatch(s -> trade.getSymbol().endsWith(s))) {
-                            continue;
-                        }
-
-                        Double newPrice = trade.getPrice();
-
-                        double change = ((newPrice / oldPrice) * 100) - 100;
-
-                        if (oldPrice.equals(newPrice) && !currentPumps.containsKey(tickerPrice.getSymbol())) {
-                            continue;
-                        }
-
-                        if (change < 0 && !currentPumps.containsKey(tickerPrice.getSymbol())) {
-                            change = 0;
-                        }
-
-                        CircularFifoQueue<Double> queue = averageChanges.computeIfAbsent(tickerPrice.getSymbol(), s -> new CircularFifoQueue<>(60));
-
-                        if (queue.isAtFullCapacity()) {
+                            // Find the running average
                             double runningAverage = queue.stream().mapToDouble(s -> s)
                                     .average()
                                     .orElse(0);
 
-                            if (currentPumps.containsKey(tickerPrice.getSymbol())) {
-                                PumpTracker pumpTracker = currentPumps.get(tickerPrice.getSymbol());
-                                double changeSinceEntry = ((newPrice / pumpTracker.getEntry()) * 100) - 100;
-                                System.out.println("    " + tickerPrice.getSymbol() + ": " + String.format("%.2f", changeSinceEntry));
-
-                                if (changeSinceEntry > pumpTracker.getProfit()) {
-                                    System.out.println("    " + tickerPrice.getSymbol() + ": Bumping profit margin...");
-                                    pumpTracker.setProfit(changeSinceEntry);
-                                    pumpTracker.setTop(newPrice);
-                                } else {
-//                                    pumpTracker.setLossHits(pumpTracker.getLossHits() + 1);
-                                    if (change < -(pumpTracker.getProfit() / 2)) {
-                                        System.out.println("    " + tickerPrice.getSymbol() + ": Leaving pump with " + String.format("%.2f", changeSinceEntry) + "% profit");
-                                        currentPumps.remove(tickerPrice.getSymbol());
-                                    }
-                                }
-                            } else if (change - runningAverage >= 2) {
-                                if (change >= 12) {
+                            if (change - runningAverage >= 0.02) {
+                                // If the change has increased by at least 2%
+                                if (change >= 0.12) {
+                                    // If it's a huge increase (12%), it could indicate a pump. We should buy in here.
 
                                 } else {
+                                    // Monitor and log the change to discord server(s)
                                     double x = getSymbol(tickerPrice.getSymbol()).getMinNotional() / 1000;
 
                                     if (Math.abs(newPrice - oldPrice) >= x) {
@@ -128,16 +131,14 @@ public class BinanceContext {
 
                             }
                         }
-
-                        queue.add(change);
-                    } else {
-                        this.trades.put(tickerPrice.getSymbol(), new Trade(tickerPrice));
                     }
-                }
-            });
-        },0, 250, TimeUnit.MILLISECONDS);
 
-//        priceChecker = scheduler.scheduleAtFixedRate(new PriceChecker(), 0, 50, TimeUnit.MILLISECONDS);
+                    queue.add(change);
+                } else {
+                    this.trades.put(tickerPrice.getSymbol(), new Trade(tickerPrice));
+                }
+            }
+        }),0, 250, TimeUnit.MILLISECONDS);
     }
 
     public Map<String, Balance> getBalances() {
@@ -187,6 +188,7 @@ public class BinanceContext {
     }
 
     public void pump(String coin, String asset) {
+        // TODO: Optimise
         String symbol = coin+asset;
         Trade trade = getTrade(symbol);
         Symbol symbolInfo = getSymbol(symbol);
@@ -195,7 +197,7 @@ public class BinanceContext {
         double free = balance.getFree();
         double down = free * 0.5;
 
-        if (free < symbolInfo.getMinNotional() || down < symbolInfo.getMinNotional()) {
+        if (down < symbolInfo.getMinNotional()) {
             System.out.println("Not enough to buy in with.");
             return;
         }
@@ -225,8 +227,6 @@ public class BinanceContext {
         String formattedHalf = Utils.reduceDecimals(totalBought*0.449, symbolInfo.getStepSize());
         client.newOrder(NewOrder.limitSell(symbol, TimeInForce.GTC, formattedHalf, String.format("%.8f", price * 1.5)));
 
-//        priceChecker = scheduler.scheduleAtFixedRate(new PriceChecker(), 0, 50, TimeUnit.MILLISECONDS);
-
         scheduler.schedule(() -> {
             System.out.println("Selling... " + trade);
             client.newOrder(NewOrder.marketSell(symbol, formattedHalf).newOrderRespType(NewOrderResponseType.FULL));
@@ -244,16 +244,4 @@ public class BinanceContext {
     public BinanceApiRestClient getClient() {
         return client;
     }
-
-//    static class PriceChecker implements Runnable {
-//        private final long start = Instant.now().toEpochMilli();
-//
-//        @Override
-//        public void run() {
-//            System.out.println(client.getPrice("CVCBTC"));
-//            if (Instant.now().toEpochMilli() - start >= 4000) {
-//                priceChecker.cancel(true);
-//            }
-//        }
-//    }
 }

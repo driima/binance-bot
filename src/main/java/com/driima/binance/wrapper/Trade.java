@@ -1,4 +1,4 @@
-package com.driima.binance.binance;
+package com.driima.binance.wrapper;
 
 import com.binance.api.client.domain.market.TickerPrice;
 import lombok.Data;

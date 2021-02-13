@@ -1,7 +1,7 @@
 package com.driima.binance.listener;
 
 import com.binance.api.client.BinanceApiRestClient;
-import com.driima.binance.binance.BinanceContext;
+import com.driima.binance.wrapper.BinanceWrapper;
 import com.driima.foxen.CommandHandler;
 import com.driima.foxen.UsageFormat;
 import com.driima.foxen.parsing.ResponseConsumer;
@@ -24,9 +24,9 @@ public class DiscordCommandListener extends CommandHandler<Message> implements M
 
     private DiscordApi api;
     private BinanceApiRestClient client;
-    private BinanceContext context;
+    private BinanceWrapper context;
 
-    public DiscordCommandListener(DiscordApi api, BinanceApiRestClient client, BinanceContext context) {
+    public DiscordCommandListener(DiscordApi api, BinanceApiRestClient client, BinanceWrapper context) {
         super(UsageFormat.builder()
                 .commandPrefix(".")
                 .optionalArgsAffixes("[]")
@@ -132,7 +132,7 @@ public class DiscordCommandListener extends CommandHandler<Message> implements M
     public SuppliableArguments getSuppliableArguments(Message supplier) {
         return new SuppliableArguments()
                 .supply(BinanceApiRestClient.class, () -> client)
-                .supply(BinanceContext.class, () -> context)
+                .supply(BinanceWrapper.class, () -> context)
                 .supply(Message.class, () -> supplier)
                 .supply(DiscordApi.class, () -> api)
                 .supply(Channel.class, () -> supplier != null ? supplier.getChannel() : null)

@@ -6,7 +6,7 @@ import com.binance.api.client.BinanceApiRestClient;
 import com.binance.api.client.domain.account.AssetBalance;
 import com.dreamburst.sed.dispatchers.DirectDispatcher;
 import com.dreamburst.sed.dispatchers.Dispatchers;
-import com.driima.binance.binance.BinanceContext;
+import com.driima.binance.wrapper.BinanceWrapper;
 import com.driima.foxen.parsing.Arguments;
 
 import java.io.FileInputStream;
@@ -25,7 +25,6 @@ public class BinanceBot {
             properties.load(inputStream);
 
             String binanceKey = properties.getProperty("binance.key");
-
             String binanceSecret = properties.getProperty("binance.secret");
             String discordBotToken = properties.getProperty("discord.bot.token");
             String discordScraperToken = properties.getProperty("discord.scraper.token");
@@ -34,8 +33,9 @@ public class BinanceBot {
             BinanceApiClientFactory factory = BinanceApiClientFactory.newInstance(binanceKey, binanceSecret);
             BinanceApiRestClient client = factory.newRestClient();
             BinanceApiAsyncRestClient binanceApiAsyncRestClient = factory.newAsyncRestClient();
-            BinanceContext context = new BinanceContext(client, binanceApiAsyncRestClient);
+            BinanceWrapper context = new BinanceWrapper(client, binanceApiAsyncRestClient);
 
+            // Register a parsable so the command framework can auto-insert
             Arguments.registerParsable(AssetBalance.class, input -> client.getAccount().getAssetBalance(input.toUpperCase()));
 
             new DiscordBot(context, discordBotToken);

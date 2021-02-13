@@ -4,9 +4,9 @@ import com.binance.api.client.domain.account.*;
 import com.binance.api.client.exception.BinanceApiException;
 import com.driima.binance.Embed;
 import com.driima.binance.EmbedType;
-import com.driima.binance.binance.Balance;
-import com.driima.binance.binance.BinanceContext;
-import com.driima.binance.binance.Symbol;
+import com.driima.binance.wrapper.Balance;
+import com.driima.binance.wrapper.BinanceWrapper;
+import com.driima.binance.wrapper.Symbol;
 import com.driima.binance.util.Utils;
 import com.driima.foxen.Command;
 import com.driima.foxen.CommandExecutor;
@@ -35,7 +35,7 @@ public class CoreCommands implements CommandExecutor {
     }
 
     @Command
-    public String bal(Server server, BinanceContext context, @Optional String coin) {
+    public String bal(Server server, BinanceWrapper context, @Optional String coin) {
         double gbpUsdt = context.getTrade("GBPUSDT").getPrice();
         double btcGbp = context.getTrade("BTCGBP").getPrice();
 
@@ -54,8 +54,8 @@ public class CoreCommands implements CommandExecutor {
         for (Balance balance : balances) {
             double total = balance.getFree() + balance.getLocked();
 
-            com.driima.binance.binance.Trade usdt = context.getTrade(balance.getAsset() + "USDT");
-            com.driima.binance.binance.Trade btc = context.getTrade(balance.getAsset() + "BTC");
+            com.driima.binance.wrapper.Trade usdt = context.getTrade(balance.getAsset() + "USDT");
+            com.driima.binance.wrapper.Trade btc = context.getTrade(balance.getAsset() + "BTC");
 
             if (usdt == null && btc == null) {
                 continue;
@@ -101,7 +101,7 @@ public class CoreCommands implements CommandExecutor {
     }
 
     @Command
-    public EmbedBuilder orders(Server server, BinanceContext context, String asset, @Optional int limit) {
+    public EmbedBuilder orders(Server server, BinanceWrapper context, String asset, @Optional int limit) {
         if (limit == 0) {
             limit = 50;
         }
@@ -119,7 +119,7 @@ public class CoreCommands implements CommandExecutor {
 
             return pack;
         } catch (BinanceApiException e) {
-            Set<com.driima.binance.binance.Trade> trades = context.getTrades(asset.toUpperCase());
+            Set<com.driima.binance.wrapper.Trade> trades = context.getTrades(asset.toUpperCase());
 
             if (trades.isEmpty()) {
                 EmbedBuilder pack = Embed.get(server, "Warning", EmbedType.WARNING).pack();
@@ -130,7 +130,7 @@ public class CoreCommands implements CommandExecutor {
             Balance balance = context.getBalance(asset);
 
             EmbedBuilder pack = Embed.get(server, "Warning", EmbedType.INFO).pack();
-            pack.addField("Did you mean one of these?", "- " + trades.stream().map(com.driima.binance.binance.Trade::getSymbol).collect(Collectors.joining("\n- ")));
+            pack.addField("Did you mean one of these?", "- " + trades.stream().map(com.driima.binance.wrapper.Trade::getSymbol).collect(Collectors.joining("\n- ")));
             pack.addField("Your " + balance.getAsset() + ":", balance.getFree() + " | " + balance.getLocked());
             return pack;
         }

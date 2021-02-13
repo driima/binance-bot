@@ -1,7 +1,7 @@
 package com.driima.binance.events;
 
 import com.dreamburst.sed.Event;
-import com.driima.binance.binance.Symbol;
+import com.driima.binance.wrapper.Symbol;
 import lombok.Data;
 
 @Data
