@@ -13,6 +13,7 @@ import org.javacord.api.entity.channel.TextChannel;
 import org.javacord.api.entity.user.UserStatus;
 import org.javacord.api.util.logging.ExceptionLogger;
 
+import java.awt.*;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -22,7 +23,7 @@ public class DiscordBot {
 
     private static final SimpleDateFormat format = new SimpleDateFormat("HH:mm:ss:SSS");
 
-    public DiscordBot(BinanceWrapper context, String token) {
+    public DiscordBot(BinanceWrapper context, String token, String webhookUrl) {
         new DiscordApiBuilder().setToken(token).login().thenAccept(api -> {
             api.updateStatus(UserStatus.DO_NOT_DISTURB);
 
@@ -35,16 +36,23 @@ public class DiscordBot {
                 String oldPrice = Utils.reduceDecimals(event.getOldPrice(), 8);
                 String newPrice = Utils.reduceDecimals(event.getNewPrice(), 8);
 
-                DiscordWebhook webhook = new DiscordWebhook("https://discord.com/api/webhooks/808471528605483038/7nlgVK5S7sS1zep9cHIOiXyPBSjKovRkkYw6uSiNXmfC__AJ2ITDhSExey8xI5WIANAP");
+                DiscordWebhook webhook = new DiscordWebhook(webhookUrl);
                 webhook.setUsername("Sudden Price Change");
-                webhook.addEmbed(new DiscordWebhook.EmbedObject()
+                DiscordWebhook.EmbedObject embed = new DiscordWebhook.EmbedObject()
                         .setTitle("Price Increase")
                         .setDescription("[" + event.getSymbol().getSymbolInfo().getSymbol() + "](https://www.binance.com/en/trade/" + event.getSymbol().getName() + "?layout=pro) - Binance Link")
                         .addField("Old Price", oldPrice, true)
                         .addField("New Price", newPrice, true)
                         .addField("Change", "+" + Utils.percentage(event.getChange()), true)
-                        .setFooter("Time: " + format.format(Date.from(Instant.now())), "")
-                );
+                        .setFooter("Time: " + format.format(Date.from(Instant.now())), "");
+
+                if (event.getChange() >= 0.1) {
+                    webhook.setUsername("Possible Pump Alert");
+                    embed.setColor(Color.RED);
+                    embed.setTitle("Possible Pump");
+                    webhook.setContent("@everyone");
+                }
+                webhook.addEmbed(embed);
 
                 try {
                     webhook.execute();

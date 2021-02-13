@@ -27,6 +27,7 @@ public class BinanceBot {
             String binanceKey = properties.getProperty("binance.key");
             String binanceSecret = properties.getProperty("binance.secret");
             String discordBotToken = properties.getProperty("discord.bot.token");
+            String webhookUrl = properties.getProperty("discord.bot.webhookUrl");
             String discordScraperToken = properties.getProperty("discord.scraper.token");
 
             // Set up Binance API and context used to wrap REST responses
@@ -38,7 +39,7 @@ public class BinanceBot {
             // Register a parsable so the command framework can auto-insert
             Arguments.registerParsable(AssetBalance.class, input -> client.getAccount().getAssetBalance(input.toUpperCase()));
 
-            new DiscordBot(context, discordBotToken);
+            new DiscordBot(context, discordBotToken, webhookUrl);
 //        new Scraper(context, discordScraperToken);
         } catch (IOException e) {
             e.printStackTrace();

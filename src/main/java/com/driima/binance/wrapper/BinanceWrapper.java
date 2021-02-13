@@ -88,7 +88,7 @@ public class BinanceWrapper {
                     }
 
                     // Get or create a rolling average queue for this symbol
-                    CircularFifoQueue<Double> queue = averageChanges.computeIfAbsent(tickerPrice.getSymbol(), s -> new CircularFifoQueue<>(60));
+                    CircularFifoQueue<Double> queue = averageChanges.computeIfAbsent(tickerPrice.getSymbol(), s -> new CircularFifoQueue<>(120));
 
                     // If the queue is filled
                     if (queue.isAtFullCapacity()) {
@@ -104,7 +104,7 @@ public class BinanceWrapper {
                             } else {
                                 // TODO: Change this logic
                                 if (change < -(pumpTracker.getProfit() / 2)) {
-                                    System.out.println("    " + tickerPrice.getSymbol() + ": Leaving pump with " + Utils.percentage(changeSinceEntry) + "% profit");
+                                    System.out.println("    " + tickerPrice.getSymbol() + ": Leaving pump with " + Utils.percentage(changeSinceEntry) + " profit");
                                     currentPumps.remove(tickerPrice.getSymbol());
                                 }
                             }
@@ -118,11 +118,12 @@ public class BinanceWrapper {
                                 // If the change has increased by at least 2%
                                 if (change >= 0.12) {
                                     // If it's a huge increase (12%), it could indicate a pump. We should buy in here.
-
+                                    System.out.println("BIG PRICE INCREASE: " + Utils.percentage(change));
                                 } else {
                                     // Monitor and log the change to discord server(s)
                                     double x = getSymbol(tickerPrice.getSymbol()).getMinNotional() / 1000;
 
+                                    // If the price is more than the min notional (possible logic change)
                                     if (Math.abs(newPrice - oldPrice) >= x) {
                                         Dispatchers.dispatch(new PriceChangeEvent(getSymbol(tickerPrice.getSymbol()), oldPrice, newPrice, change));
                                         currentPumps.put(tickerPrice.getSymbol(), new PumpTracker(newPrice));
@@ -138,7 +139,7 @@ public class BinanceWrapper {
                     this.trades.put(tickerPrice.getSymbol(), new Trade(tickerPrice));
                 }
             }
-        }),0, 250, TimeUnit.MILLISECONDS);
+        }), 0, 250, TimeUnit.MILLISECONDS);
     }
 
     public Map<String, Balance> getBalances() {
